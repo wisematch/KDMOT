@@ -124,7 +124,7 @@ class opts(object):
     self.parser.add_argument('--data_cfg', type=str,
                              default='../src/lib/cfg/data.json',
                              help='load data from cfg')
-    self.parser.add_argument('--data_dir', type=str, default='/data/yfzhang/MOT/JDE')
+    self.parser.add_argument('--data_dir', type=str, default='/export/wei.zhang/datasets/mixdata')
 
     # loss
     self.parser.add_argument('--mse_loss', action='store_true',
@@ -229,6 +229,18 @@ class opts(object):
       opt.img_size = (1088, 608)
       #opt.img_size = (864, 480)
       #opt.img_size = (576, 320)
+    elif opt.task == 'kd':
+      opt.heads = {'hm': opt.num_classes,
+                   'wh': 2 if not opt.ltrb else 4,
+                   'id': opt.reid_dim}
+      if opt.reg_offset:
+        opt.heads.update({'reg': 2})
+      opt.nID = dataset.nID
+      opt.img_size = (1088, 608)
+      opt.crop_h = 384
+      opt.crop_w = 128
+      # opt.img_size = (864, 480)
+      # opt.img_size = (576, 320)
     else:
       assert 0, 'task not defined!'
     print('heads', opt.heads)

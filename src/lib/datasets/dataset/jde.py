@@ -14,11 +14,13 @@ import copy
 
 from torch.utils.data import Dataset
 from torchvision.transforms import transforms as T
+from torchvision.transforms import functional as F
+from torchvision.transforms import ToPILImage
+
 from cython_bbox import bbox_overlaps as bbox_ious
 from opts import opts
 from utils.image import gaussian_radius, draw_umich_gaussian, draw_msra_gaussian
 from utils.utils import xyxy2xywh, generate_anchors, xywh2xyxy, encode_delta
-
 
 class LoadImages:  # for inference
     def __init__(self, path, img_size=(1088, 608)):
@@ -198,6 +200,7 @@ class LoadImagesAndLabels:  # for training
 
         # Augment image and labels
         if self.augment:
+        # if False:
             img, labels, M = random_affine(img, labels, degrees=(-5, 5), translate=(0.10, 0.10), scale=(0.50, 1.20))
 
         plotFlag = False
@@ -205,16 +208,23 @@ class LoadImagesAndLabels:  # for training
             import matplotlib
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
-            plt.figure(figsize=(50, 50))
+            # plt.figure(figsize=(50, 50))
+
             plt.imshow(img[:, :, ::-1])
-            plt.plot(labels[:, [1, 3, 3, 1, 1]].T, labels[:, [2, 2, 4, 4, 2]].T, '.-')
+            print(img.shape)
+            print(labels[:, [2, 4, 4, 2, 2]].T)
+            print(labels[:, [3, 3, 5, 5, 3]].T)
+            # assert 0
+            labels_ = labels.copy()
+            plt.plot(labels_[:, [2, 4, 4, 2, 2]].T, labels_[:, [3, 3, 5, 5, 3]].T, '.-')
             plt.axis('off')
-            plt.savefig('test.jpg')
+            plt.savefig('/export/wei.zhang/PycharmProjects/FairMOT/vis_debug/'+img_path.split('/')[-1])
             time.sleep(10)
+            assert 0
 
         nL = len(labels)
         if nL > 0:
-            # convert xyxy to xywh
+            # convert xyxy to xywh, xy represents coordinations of centers
             labels[:, 2:6] = xyxy2xywh(labels[:, 2:6].copy())  # / height
             labels[:, 2] /= width
             labels[:, 3] /= height
@@ -222,7 +232,7 @@ class LoadImagesAndLabels:  # for training
             labels[:, 5] /= height
         if self.augment:
             # random left-right flip
-            lr_flip = True
+            lr_flip = False
             if lr_flip & (random.random() > 0.5):
                 img = np.fliplr(img)
                 if nL > 0:
@@ -557,5 +567,218 @@ class DetDataset(LoadImagesAndLabels):  # for training
                 labels[i, 1] += self.tid_start_index[ds]
 
         return imgs, labels0, img_path, (h, w)
+
+
+class CropJointDataset(LoadImagesAndLabels):  # for training
+    default_resolution = [1088, 608]
+    mean = None
+    std = None
+    num_classes = 1
+
+    def __init__(self, opt, root, paths, img_size=(1088, 608), augment=False, transforms=None):
+        self.opt = opt
+        dataset_names = paths.keys()
+        self.img_files = OrderedDict()
+        self.label_files = OrderedDict()
+        self.tid_num = OrderedDict()
+        self.tid_start_index = OrderedDict()
+        self.num_classes = 1
+
+        for ds, path in paths.items():
+            with open(path, 'r') as file:
+                self.img_files[ds] = file.readlines()
+                self.img_files[ds] = [osp.join(root, x.strip()) for x in self.img_files[ds]]
+                self.img_files[ds] = list(filter(lambda x: len(x) > 0, self.img_files[ds]))
+
+            self.label_files[ds] = [
+                x.replace('images', 'labels_with_ids').replace('.png', '.txt').replace('.jpg', '.txt')
+                for x in self.img_files[ds]]
+
+        for ds, label_paths in self.label_files.items():
+            max_index = -1
+            for lp in label_paths:
+                lb = np.loadtxt(lp)
+                if len(lb) < 1:
+                    continue
+                if len(lb.shape) < 2:
+                    img_max = lb[1]
+                else:
+                    img_max = np.max(lb[:, 1])
+                if img_max > max_index:
+                    max_index = img_max
+            self.tid_num[ds] = max_index + 1
+
+        last_index = 0
+        for i, (k, v) in enumerate(self.tid_num.items()):
+            self.tid_start_index[k] = last_index
+            last_index += v
+
+        self.nID = int(last_index + 1)
+        self.nds = [len(x) for x in self.img_files.values()]
+        self.cds = [sum(self.nds[:i]) for i in range(len(self.nds))]
+        self.nF = sum(self.nds)
+        self.width = img_size[0]
+        self.height = img_size[1]
+        self.max_objs = opt.K
+        self.augment = augment
+        self.transforms = transforms
+
+        print('=' * 80)
+        print('dataset summary')
+        print(self.tid_num)
+        print('total # identities:', self.nID)
+        print('start index')
+        print(self.tid_start_index)
+        print('=' * 80)
+
+    def get_crop_data(self, img_path, label_path):
+        trans_imgs, trans_labels, img_path, (input_h, input_w) = self.get_data(img_path, label_path)
+        img = cv2.imread(img_path)  # BGR
+        h, w, _ = img.shape
+        img, ratio, padw, padh = letterbox(img, height=height, width=width)
+
+        if os.path.isfile(label_path):
+            labels0 = np.loadtxt(label_path, dtype=np.float32).reshape(-1, 6)
+
+            # Normalized xywh to pixel xyxy format
+            labels = labels0.copy()
+            labels[:, 2] = ratio * w * (labels0[:, 2] - labels0[:, 4] / 2) + padw
+            labels[:, 3] = ratio * h * (labels0[:, 3] - labels0[:, 5] / 2) + padh
+            labels[:, 4] = ratio * w * (labels0[:, 2] + labels0[:, 4] / 2) + padw
+            labels[:, 5] = ratio * h * (labels0[:, 3] + labels0[:, 5] / 2) + padh
+        else:
+            labels = np.array([])
+
+
+    def __getitem__(self, files_index):
+
+        for i, c in enumerate(self.cds):
+            if files_index >= c:
+                ds = list(self.label_files.keys())[i]
+                start_index = c
+
+        img_path = self.img_files[ds][files_index - start_index]
+        label_path = self.label_files[ds][files_index - start_index]
+
+        imgs, labels, img_path, (input_h, input_w) = self.get_data(img_path, label_path)
+        imgs_PIL = ToPILImage()(imgs).convert('RGB')
+
+        for i, _ in enumerate(labels):
+            if labels[i, 1] > -1:   # multiple datasets
+                labels[i, 1] += self.tid_start_index[ds]
+
+        output_h = imgs.shape[1] // self.opt.down_ratio
+        output_w = imgs.shape[2] // self.opt.down_ratio
+        num_classes = self.num_classes
+        num_objs = labels.shape[0]
+        hm = np.zeros((num_classes, output_h, output_w), dtype=np.float32)
+        if self.opt.ltrb:
+            wh = np.zeros((self.max_objs, 4), dtype=np.float32)
+        else:
+            wh = np.zeros((self.max_objs, 2), dtype=np.float32)
+        reg = np.zeros((self.max_objs, 2), dtype=np.float32)
+        ind = np.zeros((self.max_objs, ), dtype=np.int64)
+        reg_mask = np.zeros((self.max_objs, ), dtype=np.uint8)
+        ids = np.zeros((self.max_objs, ), dtype=np.int64)
+        bbox_xys = np.zeros((self.max_objs, 4), dtype=np.float32)
+
+        crop_h = self.opt.crop_h
+        crop_w = self.opt.crop_w
+
+        cropped_imgs = np.zeros((self.max_objs, crop_h, crop_w, 3), dtype=np.float32)
+
+        draw_gaussian = draw_msra_gaussian if self.opt.mse_loss else draw_umich_gaussian
+        for k in range(num_objs):
+            label = labels[k]
+            bbox = label[2:]        # xywh
+
+            bbox_crop = copy.deepcopy(bbox) # xyxy
+            bbox_crop[[0, 2]] = bbox_crop[[0, 2]] * output_w * self.opt.down_ratio
+            bbox_crop[[1, 3]] = bbox_crop[[1, 3]] * output_h * self.opt.down_ratio
+            bbox_crop[0] = bbox_crop[0] - bbox_crop[2] / 2
+            bbox_crop[1] = bbox_crop[1] - bbox_crop[3] / 2
+
+            bbox_crop[0] = np.clip(bbox_crop[0], 0, output_w * self.opt.down_ratio - 1)
+            bbox_crop[1] = np.clip(bbox_crop[1], 0, output_h * self.opt.down_ratio - 1)
+
+            cls_id = int(label[0])
+            bbox[[0, 2]] = bbox[[0, 2]] * output_w
+            bbox[[1, 3]] = bbox[[1, 3]] * output_h
+
+            # debug
+            plotFlag_ = False
+            if plotFlag_:
+                import matplotlib
+                matplotlib.use('Agg')
+                import matplotlib.pyplot as plt
+
+                plt.imshow(imgs_PIL)
+                bbox_ = bbox_crop.copy()
+                plt.plot(bbox_[[0, 2, 2, 0, 0]].T, bbox_[[1, 1, 3, 3, 1]].T, '.-')
+                # plt.scatter(bbox_[0], bbox_[1])
+                # plt.scatter(bbox_[2], bbox_[3])
+
+                plt.axis('off')
+                plt.savefig('/export/wei.zhang/PycharmProjects/FairMOT/vis_debug/' + str(bbox[0]) + img_path.split('/')[-1])
+                time.sleep(10)
+                assert 0
+            # debug end
+
+            bbox_amodal = copy.deepcopy(bbox)
+            bbox_amodal[0] = bbox_amodal[0] - bbox_amodal[2] / 2.
+            bbox_amodal[1] = bbox_amodal[1] - bbox_amodal[3] / 2.
+            bbox_amodal[2] = bbox_amodal[0] + bbox_amodal[2]
+            bbox_amodal[3] = bbox_amodal[1] + bbox_amodal[3]
+            bbox[0] = np.clip(bbox[0], 0, output_w - 1)
+            bbox[1] = np.clip(bbox[1], 0, output_h - 1)
+            h = bbox[3]
+            w = bbox[2]
+
+            bbox_xy = copy.deepcopy(bbox)
+            bbox_xy[0] = bbox_xy[0] - bbox_xy[2] / 2
+            bbox_xy[1] = bbox_xy[1] - bbox_xy[3] / 2
+            bbox_xy[2] = bbox_xy[0] + bbox_xy[2]
+            bbox_xy[3] = bbox_xy[1] + bbox_xy[3]
+
+            if h > 0 and w > 0:
+                radius = gaussian_radius((math.ceil(h), math.ceil(w)))
+                radius = max(0, int(radius))
+                radius = 6 if self.opt.mse_loss else radius
+                #radius = max(1, int(radius)) if self.opt.mse_loss else radius
+                ct = np.array(
+                    [bbox[0], bbox[1]], dtype=np.float32)
+                ct_int = ct.astype(np.int32)
+                draw_gaussian(hm[cls_id], ct_int, radius)
+                if self.opt.ltrb:
+                    wh[k] = ct[0] - bbox_amodal[0], ct[1] - bbox_amodal[1], \
+                            bbox_amodal[2] - ct[0], bbox_amodal[3] - ct[1]
+                else:
+                    wh[k] = 1. * w, 1. * h
+                ind[k] = ct_int[1] * output_w + ct_int[0]
+                reg[k] = ct - ct_int
+                reg_mask[k] = 1
+                ids[k] = label[1]
+                bbox_xys[k] = bbox_xy
+
+                crop_im = F.resized_crop(imgs_PIL, int(bbox_crop[1]), int(bbox_crop[0]),
+                                         int(bbox_crop[3]), int(bbox_crop[2]), size=[crop_h, crop_w])
+                cropped_imgs[k] = crop_im
+
+                # debug
+                # crop_im2 = F.crop(imgs_PIL, int(bbox_crop[1]), int(bbox_crop[0]),
+                #                          int(bbox_crop[3]), int(bbox_crop[2]))
+
+                save_crop_im = False
+                if save_crop_im:
+                    # cv2.imwrite('/export/wei.zhang/PycharmProjects/FairMOT/vis_debug/'+str(k)+'.jpg', crop_im)
+                    crop_im.save('/export/wei.zhang/PycharmProjects/FairMOT/vis_debug/'+str(k)+'_'+img_path.split('/')[-1])
+                    # time.sleep(2)
+                    # crop_im2.save('/export/wei.zhang/PycharmProjects/FairMOT/vis_debug/' + '2_'+ str(k) + '_' + img_path.split('/')[-1])
+                    time.sleep(2)
+        if save_crop_im:
+            assert 0
+        ret = {'input': imgs, 'hm': hm, 'reg_mask': reg_mask, 'ind': ind, 'wh': wh, 'reg': reg, 'ids': ids, 'bbox': bbox_xys,
+               'cropped_imgs': cropped_imgs}
+        return ret
 
 

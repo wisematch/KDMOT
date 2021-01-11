@@ -46,12 +46,41 @@ def load_model(model, model_path, optimizer=None, resume=False,
       state_dict[k] = state_dict_[k]
   model_state_dict = model.state_dict()
 
-  # match keys
-  for k in list(model_state_dict.keys()):
-    if '.dcnv2' in k:
-      k_ = k.replace('.dcnv2', '')
-      model_state_dict[k_] = model_state_dict.pop(k)
+  param_mapping_dict = {
+          'dla_up.ida_0.proj_1.conv.weight',
+          'dla_up.ida_0.node_1.conv.weight',
+          'dla_up.ida_1.proj_1.conv.weight',
+          'dla_up.ida_1.node_1.conv.weight',
+          'dla_up.ida_1.proj_2.conv.weight',
+          'dla_up.ida_1.node_2.conv.weight',
+          'dla_up.ida_2.proj_1.conv.weight',
+          'dla_up.ida_2.node_1.conv.weight',
+          'dla_up.ida_2.proj_2.conv.weight',
+          'dla_up.ida_2.node_2.conv.weight',
+          'dla_up.ida_2.proj_3.conv.weight',
+          'dla_up.ida_2.node_3.conv.weight',
+          'ida_up.proj_1.conv.weight',
+          'ida_up.node_1.conv.weight',
+          'ida_up.proj_2.conv.weight',
+          'ida_up.node_2.conv.weight',
 
+          'dla_up.ida_0.proj_1.conv.bias',
+          'dla_up.ida_0.node_1.conv.bias',
+          'dla_up.ida_1.proj_1.conv.bias',
+          'dla_up.ida_1.node_1.conv.bias',
+          'dla_up.ida_1.proj_2.conv.bias',
+          'dla_up.ida_1.node_2.conv.bias',
+          'dla_up.ida_2.proj_1.conv.bias',
+          'dla_up.ida_2.node_1.conv.bias',
+          'dla_up.ida_2.proj_2.conv.bias',
+          'dla_up.ida_2.node_2.conv.bias',
+          'dla_up.ida_2.proj_3.conv.bias',
+          'dla_up.ida_2.node_3.conv.bias',
+          'ida_up.proj_1.conv.bias',
+          'ida_up.node_1.conv.bias',
+          'ida_up.proj_2.conv.bias',
+          'ida_up.node_2.conv.bias',
+          }
 
   # print('pretrained')
   # data = open("pretrained.txt", 'w', encoding="utf-8")
@@ -60,6 +89,12 @@ def load_model(model, model_path, optimizer=None, resume=False,
   # print('model')
   # data2 = open("model.txt", 'w', encoding="utf-8")
   # print(model_state_dict.keys(), file=data2)
+
+  for k in state_dict.keys():
+    if k in param_mapping_dict:
+      k_ = k.replace('.conv', '.conv.dcnv2')
+      state_dict[k_] = state_dict.pop(k)
+
 
   # check loaded parameters and created model parameters
   msg = 'If you see this, your model does not fully load the ' + \

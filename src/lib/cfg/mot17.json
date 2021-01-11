@@ -1,5 +1,5 @@
 {
-    "root":"/data/yfzhang/MOT/JDE",
+    "root":"/export/wei.zhang/datasets/mixdata",
     "train":
     {
         "mot17":"./data/mot17.train"
