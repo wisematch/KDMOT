@@ -143,10 +143,13 @@ class opts(object):
                              help='reid loss: ce | triplet')
     self.parser.add_argument('--id_weight', type=float, default=1,
                              help='loss weight for id')
-    self.parser.add_argument('--reid_dim', type=int, default=128,
+    self.parser.add_argument('--reid_dim', type=int, default=512,
                              help='feature dim for reid')
     self.parser.add_argument('--ltrb', default=True,
                              help='regress left, top, right, bottom of bbox')
+
+    self.parser.add_argument('--kd_loss', default='l1',
+                             help='kd_loss: sl1 | l1 | mse | norm_l1')
 
     self.parser.add_argument('--norm_wh', action='store_true',
                              help='L1(\hat(y) / y, 1) or L1(\hat(y), y)')
@@ -157,6 +160,9 @@ class opts(object):
                              help='category specific bounding box size.')
     self.parser.add_argument('--not_reg_offset', action='store_true',
                              help='not regress local offset.')
+
+    self.parser.add_argument('--model_t_path', default=
+    "/export/wei.zhang/PycharmProjects/Cloned_Repo/fast-reid1/projects/bjzProject/logs/bjz/test_ram/model_final.pth")
 
   def parse(self, args=''):
     if args == '':

@@ -631,25 +631,6 @@ class CropJointDataset(LoadImagesAndLabels):  # for training
         print(self.tid_start_index)
         print('=' * 80)
 
-    def get_crop_data(self, img_path, label_path):
-        trans_imgs, trans_labels, img_path, (input_h, input_w) = self.get_data(img_path, label_path)
-        img = cv2.imread(img_path)  # BGR
-        h, w, _ = img.shape
-        img, ratio, padw, padh = letterbox(img, height=height, width=width)
-
-        if os.path.isfile(label_path):
-            labels0 = np.loadtxt(label_path, dtype=np.float32).reshape(-1, 6)
-
-            # Normalized xywh to pixel xyxy format
-            labels = labels0.copy()
-            labels[:, 2] = ratio * w * (labels0[:, 2] - labels0[:, 4] / 2) + padw
-            labels[:, 3] = ratio * h * (labels0[:, 3] - labels0[:, 5] / 2) + padh
-            labels[:, 4] = ratio * w * (labels0[:, 2] + labels0[:, 4] / 2) + padw
-            labels[:, 5] = ratio * h * (labels0[:, 3] + labels0[:, 5] / 2) + padh
-        else:
-            labels = np.array([])
-
-
     def __getitem__(self, files_index):
 
         for i, c in enumerate(self.cds):
@@ -685,7 +666,7 @@ class CropJointDataset(LoadImagesAndLabels):  # for training
         crop_h = self.opt.crop_h
         crop_w = self.opt.crop_w
 
-        cropped_imgs = np.zeros((self.max_objs, crop_h, crop_w, 3), dtype=np.float32)
+        cropped_imgs = np.zeros((self.max_objs, 3, crop_h, crop_w), dtype=np.float32)
 
         draw_gaussian = draw_msra_gaussian if self.opt.mse_loss else draw_umich_gaussian
         for k in range(num_objs):
@@ -762,7 +743,9 @@ class CropJointDataset(LoadImagesAndLabels):  # for training
 
                 crop_im = F.resized_crop(imgs_PIL, int(bbox_crop[1]), int(bbox_crop[0]),
                                          int(bbox_crop[3]), int(bbox_crop[2]), size=[crop_h, crop_w])
-                cropped_imgs[k] = crop_im
+                # print(np.array(crop_im).transpose(2,0,1).shape)
+                # assert 0
+                cropped_imgs[k] = np.array(crop_im).transpose((2, 0, 1))
 
                 # debug
                 # crop_im2 = F.crop(imgs_PIL, int(bbox_crop[1]), int(bbox_crop[0]),

@@ -17,6 +17,8 @@ from logger import Logger
 from datasets.dataset_factory import get_dataset
 from trains.train_factory import train_factory
 
+from models.teacher_model import create_teacher_model, load_teacher_model
+
 
 def main(opt):
     torch.manual_seed(opt.seed)
@@ -41,6 +43,10 @@ def main(opt):
 
     print('Creating model...')
     model = create_model(opt.arch, opt.heads, opt.head_conv)
+
+    teacher_model = create_teacher_model()
+    teacher_model = load_teacher_model(teacher_model, opt.model_t_path)
+
     optimizer = torch.optim.Adam(model.parameters(), opt.lr)
     start_epoch = 0
 
@@ -57,7 +63,7 @@ def main(opt):
 
     print('Starting training...')
     Trainer = train_factory[opt.task]
-    trainer = Trainer(opt, model, optimizer)
+    trainer = Trainer(opt, model, teacher_model, optimizer)
     trainer.set_device(opt.gpus, opt.chunk_sizes, opt.device)
 
     if opt.load_model != '':
