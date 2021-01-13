@@ -10,6 +10,7 @@ import cv2
 import torch.nn.functional as F
 
 from models.model import create_model, load_model
+from models.model_kd import create_model_kd
 from models.decode import mot_decode
 from tracking_utils.utils import *
 from tracking_utils.log import logger
@@ -180,7 +181,10 @@ class JDETracker(object):
         else:
             opt.device = torch.device('cpu')
         print('Creating model...')
-        self.model = create_model(opt.arch, opt.heads, opt.head_conv)
+        if self.opt.id_head != 'base':
+            self.model = create_model_kd(opt.arch, opt.heads, opt.head_conv, opt.id_head)
+        else:
+            self.model = create_model(opt.arch, opt.heads, opt.head_conv)
         self.model = load_model(self.model, opt.load_model)
         self.model = self.model.to(opt.device)
         self.model.eval()

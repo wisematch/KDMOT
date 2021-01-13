@@ -33,9 +33,9 @@ class MotKDLoss(torch.nn.Module):
             NormRegL1Loss() if opt.norm_wh else \
                 RegWeightedL1Loss() if opt.cat_spec_wh else self.crit_reg
 
-        self.crit_kd = torch.nn.MSELoss(reduction='mean', size_average=False) if opt.kd_loss == 'mse' else \
-            torch.nn.SmoothL1Loss(reduction='mean', size_average=False) if opt.kd_loss == 'smooth_l1' else \
-                torch.nn.L1Loss(reduction='mean', size_average=False) if opt.kd_loss == 'l1' else None
+        self.crit_kd = torch.nn.MSELoss(reduction='mean', size_average=True) if opt.kd_loss == 'mse' else \
+            torch.nn.SmoothL1Loss(reduction='mean', size_average=True) if opt.kd_loss == 'smooth_l1' else \
+                torch.nn.L1Loss(reduction='mean', size_average=True) if opt.kd_loss == 'l1' else None
 
         self.opt = opt
         self.emb_dim = opt.reid_dim

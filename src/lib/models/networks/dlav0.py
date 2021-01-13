@@ -532,7 +532,7 @@ def fill_fc_weights(layers):
 
 class DLASeg(nn.Module):
     def __init__(self, base_name, heads,
-                 pretrained=True, down_ratio=4, head_conv=256):
+                 pretrained=True, down_ratio=4, head_conv=256, id_head='base'):
         super(DLASeg, self).__init__()
         assert down_ratio in [2, 4, 8, 16]
         self.heads = heads
@@ -548,6 +548,22 @@ class DLASeg(nn.Module):
                       stride=1, padding=0, bias=True)
         )
         '''
+
+        self.id_head = id_head
+
+        if self.id_head == 'res':
+            classes = self.heads['id']
+            conv_channel = [channels[self.first_level], 256, 256, 64]
+            self.res_conv1 = nn.Conv2d(conv_channel[0], conv_channel[1],
+                                      kernel_size=3, padding=1, bias=True)
+            self.res_conv2 = nn.Conv2d(conv_channel[1], conv_channel[2],
+                                      kernel_size=3, padding=1, bias=True)
+            self.res_conv3 = nn.Conv2d(conv_channel[2], conv_channel[3],
+                                      kernel_size=3, padding=1, bias=True)
+            self.res_conv4 = nn.Conv2d(conv_channel[3], classes,
+                                      kernel_size=1, stride=1, padding=0, bias=True)
+            self.relu = nn.ReLU(inplace=True)
+
 
         for head in self.heads:
             classes = self.heads[head]
@@ -604,9 +620,29 @@ class DLASeg(nn.Module):
         # y = self.softmax(self.up(x))
         ret = {}
         for head in self.heads:
-            ret[head] = self.__getattr__(head)(x)
+            if head != 'id':
+                ret[head] = self.__getattr__(head)(x)
+            else:  # id head
+                if self.id_head == 'res':
+                    ret[head] = self.res_head_forward(x)
+                elif self.id_head == 'base':
+                    ret[head] = self.__getattr__(head)(x)
+                else:
+                    raise ValueError
         return [ret]
 
+    def res_head_forward(self, x):
+        out = self.res_conv1(x)
+        out = self.relu(out)
+        out = self.res_conv2(out)
+        out = self.relu(out)
+        out = self.res_conv3(out)
+        out = self.relu(out)
+
+        out = out + x
+        out = self.res_conv4(out)
+
+        return out
     '''
     def optim_parameters(self, memo=None):
         for param in self.base.parameters():
@@ -639,9 +675,10 @@ def dla169up(classes, pretrained_base=None, **kwargs):
     return model
 '''
 
-def get_pose_net(num_layers, heads, head_conv=256, down_ratio=4):
+def get_pose_net(num_layers, heads, head_conv=256, down_ratio=4, id_head='base'):
   model = DLASeg('dla{}'.format(num_layers), heads,
                  pretrained=True,
                  down_ratio=down_ratio,
-                 head_conv=head_conv)
+                 head_conv=head_conv,
+                 id_head=id_head)
   return model

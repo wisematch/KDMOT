@@ -271,7 +271,7 @@ blocks_dict = {
 
 class PoseHighResolutionNet(nn.Module):
 
-    def __init__(self, cfg, heads):
+    def __init__(self, cfg, heads, id_head='base'):
         self.inplanes = 64
         extra = cfg.MODEL.EXTRA
         super(PoseHighResolutionNet, self).__init__()
@@ -334,10 +334,24 @@ class PoseHighResolutionNet(nn.Module):
                 for name, _ in m.named_parameters():
                     if name in ['bias']:
                         nn.init.constant_(m.bias, 0)
+        last_inp_channels = np.int(np.sum(pre_stage_channels))
 
         self.heads = heads
+        self.id_head = id_head
 
-        last_inp_channels = np.int(np.sum(pre_stage_channels))
+        if self.id_head == 'res':
+            classes = self.heads['id']
+            conv_channel = [last_inp_channels, 256, 256, 64]
+            self.res_conv1 = nn.Conv2d(conv_channel[0], conv_channel[1],
+                                      kernel_size=3, padding=1, bias=True)
+            self.res_conv2 = nn.Conv2d(conv_channel[1], conv_channel[2],
+                                      kernel_size=3, padding=1, bias=True)
+            self.res_conv3 = nn.Conv2d(conv_channel[2], conv_channel[3],
+                                      kernel_size=3, padding=1, bias=True)
+            self.res_conv4 = nn.Conv2d(conv_channel[3], classes,
+                                      kernel_size=1, stride=1, padding=0, bias=True)
+            self.relu = nn.ReLU(inplace=True)
+
 
         #self.last_layer = nn.Sequential(
             #nn.Conv2d(
@@ -508,8 +522,29 @@ class PoseHighResolutionNet(nn.Module):
 
         z = {}
         for head in self.heads:
-            z[head] = self.__getattr__(head)(x)
+            if head != 'id':
+                z[head] = self.__getattr__(head)(x)
+            else:  # id head
+                if self.id_head == 'res':
+                    z[head] = self.res_head_forward(x)
+                elif self.id_head == 'base':
+                    z[head] = self.__getattr__(head)(x)
+                else:
+                    raise ValueError
         return [z]
+
+    def res_head_forward(self, x):
+        out = self.res_conv1(x)
+        out = self.relu(out)
+        out = self.res_conv2(out)
+        out = self.relu(out)
+        out = self.res_conv3(out)
+        out = self.relu(out)
+
+        out = out + x
+        out = self.res_conv4(out)
+
+        return out
 
     def init_weights(self, pretrained=''):
         if os.path.isfile(pretrained):
@@ -535,7 +570,7 @@ def fill_fc_weights(layers):
                 nn.init.constant_(m.bias, 0)
 
 
-def get_pose_net(num_layers, heads, head_conv):
+def get_pose_net(num_layers, heads, head_conv, id_head='base'):
     if num_layers == 32:
         cfg_dir = '../src/lib/models/networks/config/hrnet_w32.yaml'
     elif num_layers == 18:
@@ -543,7 +578,7 @@ def get_pose_net(num_layers, heads, head_conv):
     else:
         cfg_dir = '../src/lib/models/networks/config/hrnet_w18.yaml'
     update_config(cfg, cfg_dir)
-    model = PoseHighResolutionNet(cfg, heads)
+    model = PoseHighResolutionNet(cfg, heads, id_head=id_head)
     model.init_weights(cfg.MODEL.PRETRAINED)
 
     return model

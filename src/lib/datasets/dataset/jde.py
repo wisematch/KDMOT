@@ -641,8 +641,15 @@ class CropJointDataset(LoadImagesAndLabels):  # for training
         img_path = self.img_files[ds][files_index - start_index]
         label_path = self.label_files[ds][files_index - start_index]
 
-        imgs, labels, img_path, (input_h, input_w) = self.get_data(img_path, label_path)
+        if self.opt.origin_crop:
+            # crop_imgs and crop_labels are XYWH, imgs and labels are XYWH
+            imgs, labels, img_path, (input_h, input_w), crop_imgs, crop_labels = self.get_data_crop(img_path, label_path)
+
+        else:
+            imgs, labels, img_path, (input_h, input_w) = self.get_data(img_path, label_path)
+
         imgs_PIL = ToPILImage()(imgs).convert('RGB')
+        imgs_for_crop = ToPILImage()(crop_imgs).convert('RGB') if self.opt.origin_crop else imgs_PIL
 
         for i, _ in enumerate(labels):
             if labels[i, 1] > -1:   # multiple datasets
@@ -673,14 +680,24 @@ class CropJointDataset(LoadImagesAndLabels):  # for training
             label = labels[k]
             bbox = label[2:]        # xywh
 
-            bbox_crop = copy.deepcopy(bbox) # xyxy
-            bbox_crop[[0, 2]] = bbox_crop[[0, 2]] * output_w * self.opt.down_ratio
-            bbox_crop[[1, 3]] = bbox_crop[[1, 3]] * output_h * self.opt.down_ratio
-            bbox_crop[0] = bbox_crop[0] - bbox_crop[2] / 2
-            bbox_crop[1] = bbox_crop[1] - bbox_crop[3] / 2
+            if self.opt.origin_crop:
+                bbox_crop = copy.deepcopy(crop_labels[k][2:])
+                bbox_crop[0] = np.clip(bbox_crop[0], 0, output_w * self.opt.down_ratio - 1)
+                bbox_crop[1] = np.clip(bbox_crop[1], 0, output_h * self.opt.down_ratio - 1)
+                # bbox_crop[2] = np.clip(bbox_crop[2], 0, output_w * self.opt.down_ratio - 1)
+                # bbox_crop[3] = np.clip(bbox_crop[3], 0, output_h * self.opt.down_ratio - 1)
+                bbox_crop[2] = bbox_crop[2] - bbox_crop[0]
+                bbox_crop[3] = bbox_crop[3] - bbox_crop[1]
 
-            bbox_crop[0] = np.clip(bbox_crop[0], 0, output_w * self.opt.down_ratio - 1)
-            bbox_crop[1] = np.clip(bbox_crop[1], 0, output_h * self.opt.down_ratio - 1)
+            else:
+                bbox_crop = copy.deepcopy(bbox)
+                bbox_crop[[0, 2]] = bbox_crop[[0, 2]] * output_w * self.opt.down_ratio
+                bbox_crop[[1, 3]] = bbox_crop[[1, 3]] * output_h * self.opt.down_ratio
+                bbox_crop[0] = bbox_crop[0] - bbox_crop[2] / 2
+                bbox_crop[1] = bbox_crop[1] - bbox_crop[3] / 2
+
+                bbox_crop[0] = np.clip(bbox_crop[0], 0, output_w * self.opt.down_ratio - 1)
+                bbox_crop[1] = np.clip(bbox_crop[1], 0, output_h * self.opt.down_ratio - 1)
 
             cls_id = int(label[0])
             bbox[[0, 2]] = bbox[[0, 2]] * output_w
@@ -692,9 +709,14 @@ class CropJointDataset(LoadImagesAndLabels):  # for training
                 import matplotlib
                 matplotlib.use('Agg')
                 import matplotlib.pyplot as plt
-
-                plt.imshow(imgs_PIL)
+                print(imgs_for_crop.size)
+                plt.imshow(imgs_for_crop)
                 bbox_ = bbox_crop.copy()
+                bbox_[2] = bbox_[2] + bbox_[0]
+                bbox_[3] = bbox_[3] + bbox_[1]
+
+                print(bbox_)
+
                 plt.plot(bbox_[[0, 2, 2, 0, 0]].T, bbox_[[1, 1, 3, 3, 1]].T, '.-')
                 # plt.scatter(bbox_[0], bbox_[1])
                 # plt.scatter(bbox_[2], bbox_[3])
@@ -741,7 +763,7 @@ class CropJointDataset(LoadImagesAndLabels):  # for training
                 ids[k] = label[1]
                 bbox_xys[k] = bbox_xy
 
-                crop_im = F.resized_crop(imgs_PIL, int(bbox_crop[1]), int(bbox_crop[0]),
+                crop_im = F.resized_crop(imgs_for_crop, int(bbox_crop[1]), int(bbox_crop[0]),
                                          int(bbox_crop[3]), int(bbox_crop[2]), size=[crop_h, crop_w])
                 # print(np.array(crop_im).transpose(2,0,1).shape)
                 # assert 0
@@ -763,5 +785,101 @@ class CropJointDataset(LoadImagesAndLabels):  # for training
         ret = {'input': imgs, 'hm': hm, 'reg_mask': reg_mask, 'ind': ind, 'wh': wh, 'reg': reg, 'ids': ids, 'bbox': bbox_xys,
                'cropped_imgs': cropped_imgs}
         return ret
+
+    def get_data_crop(self, img_path, label_path):
+        height = self.height
+        width = self.width
+        img = cv2.imread(img_path)  # BGR
+        if img is None:
+            raise ValueError('File corrupt {}'.format(img_path))
+
+        crop_img = img.copy()
+
+        augment_hsv = True
+        if self.augment and augment_hsv:
+            # SV augmentation by 50%
+            fraction = 0.50
+            img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+            S = img_hsv[:, :, 1].astype(np.float32)
+            V = img_hsv[:, :, 2].astype(np.float32)
+
+            a = (random.random() * 2 - 1) * fraction + 1
+            S *= a
+            if a > 1:
+                np.clip(S, a_min=0, a_max=255, out=S)
+
+            a = (random.random() * 2 - 1) * fraction + 1
+            V *= a
+            if a > 1:
+                np.clip(V, a_min=0, a_max=255, out=V)
+
+            img_hsv[:, :, 1] = S.astype(np.uint8)
+            img_hsv[:, :, 2] = V.astype(np.uint8)
+            cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=img)
+
+        h, w, _ = img.shape
+        img, ratio, padw, padh = letterbox(img, height=height, width=width)
+        crop_img, _, _, _ = letterbox(crop_img, height=height, width=width)
+
+        # Load labels
+        if os.path.isfile(label_path):
+            labels0 = np.loadtxt(label_path, dtype=np.float32).reshape(-1, 6)
+
+            # Normalized xywh to pixel xyxy format
+            labels = labels0.copy()
+            labels[:, 2] = ratio * w * (labels0[:, 2] - labels0[:, 4] / 2) + padw
+            labels[:, 3] = ratio * h * (labels0[:, 3] - labels0[:, 5] / 2) + padh
+            labels[:, 4] = ratio * w * (labels0[:, 2] + labels0[:, 4] / 2) + padw
+            labels[:, 5] = ratio * h * (labels0[:, 3] + labels0[:, 5] / 2) + padh
+        else:
+            labels = np.array([])
+
+        crop_labels = labels.copy()
+
+        # Augment image and labels
+        if self.augment:
+            img, labels, M = random_affine(img, labels, degrees=(-5, 5), translate=(0.10, 0.10), scale=(0.50, 1.20))
+
+        plotFlag = False
+        if plotFlag:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            # plt.figure(figsize=(50, 50))
+
+            plt.imshow(crop_img[:, :, ::-1])
+
+            # assert 0
+            labels_ = crop_labels.copy()
+            plt.plot(labels_[:, [2, 4, 4, 2, 2]].T, labels_[:, [3, 3, 5, 5, 3]].T, '.-')
+            plt.axis('off')
+            plt.savefig('/export/wei.zhang/PycharmProjects/FairMOT/vis_debug/'+img_path.split('/')[-1])
+            time.sleep(10)
+            assert 0
+
+        nL = len(labels)
+        if nL > 0:
+            # convert xyxy to xywh, xy represents coordinations of centers
+            labels[:, 2:6] = xyxy2xywh(labels[:, 2:6].copy())  # / height
+            labels[:, 2] /= width
+            labels[:, 3] /= height
+            labels[:, 4] /= width
+            labels[:, 5] /= height
+
+        if self.augment:
+            # random left-right flip
+            lr_flip = False
+            if lr_flip & (random.random() > 0.5):
+                img = np.fliplr(img)
+                if nL > 0:
+                    labels[:, 2] = 1 - labels[:, 2]
+
+        img = np.ascontiguousarray(img[:, :, ::-1])  # BGR to RGB
+        crop_img = np.ascontiguousarray(crop_img[:, :, ::-1])  # BGR to RGB
+
+        if self.transforms is not None:
+            img = self.transforms(img)
+
+        return img, labels, img_path, (h, w), crop_img, crop_labels
 
 

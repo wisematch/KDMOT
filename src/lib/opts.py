@@ -149,7 +149,7 @@ class opts(object):
                              help='regress left, top, right, bottom of bbox')
 
     self.parser.add_argument('--kd_loss', default='l1',
-                             help='kd_loss: sl1 | l1 | mse | norm_l1')
+                             help='kd_loss: smooth_l1 | l1 | mse')
 
     self.parser.add_argument('--norm_wh', action='store_true',
                              help='L1(\hat(y) / y, 1) or L1(\hat(y), y)')
@@ -163,6 +163,9 @@ class opts(object):
 
     self.parser.add_argument('--model_t_path', default=
     "/export/wei.zhang/PycharmProjects/Cloned_Repo/fast-reid1/projects/bjzProject/logs/bjz/test_ram/model_final.pth")
+    self.parser.add_argument('--origin_crop', default=False)
+    self.parser.add_argument('--id_head', default='base',
+                             help='base | res')
 
   def parse(self, args=''):
     if args == '':
@@ -255,6 +258,9 @@ class opts(object):
   def init(self, args=''):
     default_dataset_info = {
       'mot': {'default_resolution': [608, 1088], 'num_classes': 1,
+                'mean': [0.408, 0.447, 0.470], 'std': [0.289, 0.274, 0.278],
+                'dataset': 'jde', 'nID': 14455},
+      'kd': {'default_resolution': [608, 1088], 'num_classes': 1,
                 'mean': [0.408, 0.447, 0.470], 'std': [0.289, 0.274, 0.278],
                 'dataset': 'jde', 'nID': 14455},
     }

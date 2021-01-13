@@ -426,7 +426,7 @@ class Interpolate(nn.Module):
 
 class DLASeg(nn.Module):
     def __init__(self, base_name, heads, pretrained, down_ratio, final_kernel,
-                 last_level, head_conv, out_channel=0):
+                 last_level, head_conv, out_channel=0, id_head='base'):
         super(DLASeg, self).__init__()
         assert down_ratio in [2, 4, 8, 16]
         self.first_level = int(np.log2(down_ratio))
@@ -441,7 +441,22 @@ class DLASeg(nn.Module):
 
         self.ida_up = IDAUp(out_channel, channels[self.first_level:self.last_level], 
                             [2 ** i for i in range(self.last_level - self.first_level)])
-        
+
+        self.id_head = id_head
+
+        if self.id_head == 'res':
+            classes = self.heads['id']
+            conv_channel = [channels[self.first_level], 256, 256, 64]
+            self.res_conv1 = nn.Conv2d(conv_channel[0], conv_channel[1],
+                                      kernel_size=3, padding=1, bias=True)
+            self.res_conv2 = nn.Conv2d(conv_channel[1], conv_channel[2],
+                                      kernel_size=3, padding=1, bias=True)
+            self.res_conv3 = nn.Conv2d(conv_channel[2], conv_channel[3],
+                                      kernel_size=3, padding=1, bias=True)
+            self.res_conv4 = nn.Conv2d(conv_channel[3], classes,
+                                      kernel_size=1, stride=1, padding=0, bias=True)
+            self.relu = nn.ReLU(inplace=True)
+
         self.heads = heads
         for head in self.heads:
             classes = self.heads[head]
@@ -478,16 +493,38 @@ class DLASeg(nn.Module):
 
         z = {}
         for head in self.heads:
-            z[head] = self.__getattr__(head)(y[-1])
+            if head != 'id':
+                z[head] = self.__getattr__(head)(y[-1])
+            else:
+                if self.id_head == 'res':
+                    z[head] = self.res_head_forward(y[-1])
+                elif self.id_head == 'base':
+                    z[head] = self.__getattr__(head)(y[-1])
+                else:
+                    raise ValueError
         return [z]
+
+    def res_head_forward(self, x):
+        out = self.res_conv1(x)
+        out = self.relu(out)
+        out = self.res_conv2(out)
+        out = self.relu(out)
+        out = self.res_conv3(out)
+        out = self.relu(out)
+
+        out = out + x
+        out = self.res_conv4(out)
+
+        return out
     
 
-def get_pose_net(num_layers, heads, head_conv=256, down_ratio=4):
+def get_pose_net(num_layers, heads, head_conv=256, down_ratio=4, id_head='base'):
   model = DLASeg('dla{}'.format(num_layers), heads,
                  pretrained=True,
                  down_ratio=down_ratio,
                  final_kernel=1,
                  last_level=5,
-                 head_conv=head_conv)
+                 head_conv=head_conv,
+                 id_head=id_head)
   return model
 
