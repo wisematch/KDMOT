@@ -7,13 +7,25 @@ import torch
 import torch.nn as nn
 import os
 
-from .fastreid.modeling.meta_arch.build import build_model as build_fast_reid
 from .fastreid.utils.checkpoint import Checkpointer as FastReID_Checkpointer
-from .fastreid.config.config import get_cfg as get_fastreid_cfg
 
-def create_teacher_model():
-    cfg = get_fastreid_cfg()
-    embedding_model = build_fast_reid(cfg)
+
+def create_teacher_model(teacher_cfg_path=-1):
+    if teacher_cfg_path == -1:
+        from .fastreid.config.config import get_cfg as get_fastreid_cfg
+        from .fastreid.modeling.meta_arch.build import build_model as build_fast_reid
+
+        cfg = get_fastreid_cfg()
+        embedding_model = build_fast_reid(cfg)
+
+    else:   # new teacher
+        from .fastreid2.distill import build_resnet_backbone_distill, DistillerOverhaul
+        from .fastreid2.modeling.meta_arch.build import build_model as build_fast_reid2
+        from .fastreid2.config.config import get_cfg as get_fastreid_cfg2
+
+        cfg = get_fastreid_cfg2()
+        cfg.merge_from_file(teacher_cfg_path)
+        embedding_model = build_fast_reid2(cfg)
     return embedding_model
 
 def load_teacher_model(model_t, model_t_path):

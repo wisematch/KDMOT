@@ -33,7 +33,7 @@ class Baseline(nn.Module):
         return self.pixel_mean.device
 
     def forward(self, batched_inputs):
-        images = self.preprocess_image(batched_inputs)
+        images = self.preprocess_image(batched_inputs)  # to device, normalize
         # print("baseline")
         # print(batched_inputs)
         # print(images)
@@ -67,7 +67,6 @@ class Baseline(nn.Module):
             images = batched_inputs.to(self.device)
         else:
             raise TypeError("batched_inputs must be dict or torch.Tensor, but get {}".format(type(batched_inputs)))
-
         images = (images - self.pixel_mean) / self.pixel_std
         return images
 

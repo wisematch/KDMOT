@@ -443,6 +443,7 @@ class DLASeg(nn.Module):
                             [2 ** i for i in range(self.last_level - self.first_level)])
 
         self.id_head = id_head
+        self.heads = heads
 
         if self.id_head == 'res':
             classes = self.heads['id']
@@ -457,7 +458,6 @@ class DLASeg(nn.Module):
                                       kernel_size=1, stride=1, padding=0, bias=True)
             self.relu = nn.ReLU(inplace=True)
 
-        self.heads = heads
         for head in self.heads:
             classes = self.heads[head]
             if head_conv > 0:

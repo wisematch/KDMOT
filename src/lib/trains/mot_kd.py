@@ -35,17 +35,30 @@ class MotKDLoss(torch.nn.Module):
 
         self.crit_kd = torch.nn.MSELoss(reduction='mean', size_average=True) if opt.kd_loss == 'mse' else \
             torch.nn.SmoothL1Loss(reduction='mean', size_average=True) if opt.kd_loss == 'smooth_l1' else \
-                torch.nn.L1Loss(reduction='mean', size_average=True) if opt.kd_loss == 'l1' else None
+            torch.nn.L1Loss(reduction='mean', size_average=True) if opt.kd_loss == 'l1' else \
+            torch.nn.CrossEntropyLoss(ignore_index=-1) if opt.kd_loss == 'ce' else None
 
         self.opt = opt
         self.emb_dim = opt.reid_dim
 
+        self.nID = opt.nID
+        self.classifier = nn.Linear(self.emb_dim, self.nID)
+        self.emb_scale = math.sqrt(2) * math.log(self.nID - 1)
+
         self.s_det = nn.Parameter(-1.85 * torch.ones(1))
-        self.s_id = nn.Parameter(-1.05 * torch.ones(1))
+
+        if opt.standard_kd:
+            self.s_id = nn.Parameter(-0.55 * torch.ones(1))
+            self.s_an = nn.Parameter(-0.40 * torch.ones(1))
+        else:
+            self.s_id = nn.Parameter(-1.05 * torch.ones(1))
+
+        self.gt_IDLoss = nn.CrossEntropyLoss(ignore_index=-1)
+
 
     def forward(self, outputs, outputs_t, batch):
         opt = self.opt
-        hm_loss, wh_loss, off_loss, id_loss = 0, 0, 0, 0
+        hm_loss, wh_loss, off_loss, id_loss, an_loss = 0, 0, 0, 0, 0
         for s in range(opt.num_stacks):
             output = outputs[s]
             if not opt.mse_loss:
@@ -65,23 +78,34 @@ class MotKDLoss(torch.nn.Module):
                 id_head = _tranpose_and_gather_feat(output['id'], batch['ind'])
                 id_output = id_head[batch['reg_mask'] > 0].contiguous()
 
-                if outputs_t == None:
-                    id_target = batch['ids'][batch['reg_mask'] > 0]
-                else:
-                    id_target = outputs_t
+                id_annot = batch['ids'][batch['reg_mask'] > 0]
+
+                id_target = outputs_t
 
                 # print(batch.keys())
                 # for k in batch.keys():
                 #     print(k, ': ', batch[k].shape)
-                id_loss += self.crit_kd(id_output, id_target)
+                if opt.standard_kd:
+                    an_loss += self.gt_IDLoss(id_output, id_annot) * opt.standard_kd_weight
+                    id_loss += self.crit_kd(id_output, id_target)
+                else:
+                    id_loss += self.crit_kd(id_output, id_target)
+                    an_loss = torch.zeros_like(id_loss)
+                id_loss = opt.id_weight * id_loss
+            else:
+                id_loss = torch.zeros_like(off_loss)
 
         det_loss = opt.hm_weight * hm_loss + opt.wh_weight * wh_loss + opt.off_weight * off_loss
 
-        loss = torch.exp(-self.s_det) * det_loss + torch.exp(-self.s_id) * id_loss + (self.s_det + self.s_id)
+        if opt.standard_kd:
+            loss = torch.exp(-self.s_det) * det_loss + torch.exp(-self.s_id) * id_loss + \
+                   torch.exp(-self.s_an) * an_loss + (self.s_det + self.s_id + self.s_an)
+        else:
+            loss = torch.exp(-self.s_det) * det_loss + torch.exp(-self.s_id) * id_loss + (self.s_det + self.s_id)
         loss *= 0.5
 
         loss_stats = {'loss': loss, 'hm_loss': hm_loss,
-                      'wh_loss': wh_loss, 'off_loss': off_loss, 'id_loss': id_loss}
+                      'wh_loss': wh_loss, 'off_loss': off_loss, 'id_loss': id_loss, 'an_loss': an_loss}
         return loss, loss_stats
 
 class ModelWithLoss_KD(torch.nn.Module):
@@ -97,7 +121,6 @@ class ModelWithLoss_KD(torch.nn.Module):
         if self.teacher_model is not None:
             self.teacher_model = self.teacher_model.eval()
             with torch.no_grad():
-                outputs_t = []
                 input_t = batch['cropped_imgs'][batch['reg_mask'] > 0]  # .contiguous()
 
                 # for i in range(batch['cropped_imgs'].shape[0]):
@@ -116,7 +139,7 @@ class MotKDTrainer(BaseTrainer):
         self.model_with_loss = ModelWithLoss_KD(model, self.loss, teacher_model)
 
     def _get_losses(self, opt):
-        loss_states = ['loss', 'hm_loss', 'wh_loss', 'off_loss', 'id_loss']
+        loss_states = ['loss', 'hm_loss', 'wh_loss', 'off_loss', 'id_loss', 'an_loss']
         loss = MotKDLoss(opt)
         return loss_states, loss
 

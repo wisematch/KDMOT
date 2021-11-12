@@ -12,6 +12,8 @@ import torch.utils.data
 from torchvision.transforms import transforms as T
 from opts import opts
 from models.model import create_model, load_model, save_model
+from models.model_kd import create_model_kd
+
 from models.data_parallel import DataParallel
 from logger import Logger
 from datasets.dataset_factory import get_dataset
@@ -27,6 +29,7 @@ def main(opt):
     print('Setting up data...')
     Dataset = get_dataset(opt.dataset, opt.task)
     f = open(opt.data_cfg)
+    print(f)
     data_config = json.load(f)
     trainset_paths = data_config['train']
     dataset_root = data_config['root']
@@ -42,9 +45,15 @@ def main(opt):
     opt.device = torch.device('cuda' if opt.gpus[0] >= 0 else 'cpu')
 
     print('Creating model...')
-    model = create_model(opt.arch, opt.heads, opt.head_conv)
+    if opt.id_head != 'base':
+        model = create_model_kd(opt.arch, opt.heads, opt.head_conv, opt.id_head)
+    else:
+        model = create_model(opt.arch, opt.heads, opt.head_conv)
 
-    teacher_model = create_teacher_model()
+    if opt.new_teacher:
+        teacher_model = create_teacher_model(teacher_cfg_path=opt.new_teacher_cfg)
+    else:
+        teacher_model = create_teacher_model(teacher_cfg_path=-1)
     teacher_model = load_teacher_model(teacher_model, opt.model_t_path)
 
     optimizer = torch.optim.Adam(model.parameters(), opt.lr)
@@ -92,7 +101,7 @@ def main(opt):
             print('Drop LR to', lr)
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr
-        if epoch % 5 == 0 or epoch >= 25:
+        if epoch % 5 == 0 or epoch >= (opt.num_epochs - 10):
             save_model(os.path.join(opt.save_dir, 'model_{}.pth'.format(epoch)),
                        epoch, model, optimizer)
     logger.close()

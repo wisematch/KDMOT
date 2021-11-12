@@ -33,8 +33,8 @@ def create_model(arch, heads, head_conv):
 def load_model(model, model_path, optimizer=None, resume=False, 
                lr=None, lr_step=None):
   start_epoch = 0
-  checkpoint = torch.load(model_path, map_location=lambda storage, loc: storage)
-  print('loaded {}, epoch {}'.format(model_path, checkpoint['epoch']))
+  checkpoint = torch.load(model_path,   map_location=lambda storage, loc: storage)
+  print('loaded pretrained model {}, epoch {}'.format(model_path, checkpoint['epoch']))
   state_dict_ = checkpoint['state_dict']
   state_dict = {}
   
@@ -112,7 +112,7 @@ def load_model(model, model_path, optimizer=None, resume=False,
       print('Drop parameter {}.'.format(k) + msg)
   for k in model_state_dict:
     if not (k in state_dict):
-      print('No param {}.'.format(k) + msg)
+      print('Param {} exists in checkpoints while not in new model now.'.format(k) + msg)
       state_dict[k] = model_state_dict[k]
   model.load_state_dict(state_dict, strict=False)
 

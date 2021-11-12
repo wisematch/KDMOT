@@ -154,6 +154,7 @@ def get_cfg() -> CfgNode:
     Returns:
         a fastreid CfgNode instance.
     """
+
     from .defaults import _C
 
     return _C.clone()

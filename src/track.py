@@ -78,7 +78,7 @@ def eval_seq(opt, dataloader, data_type, result_filename, save_dir=None, show_im
     for i, (path, img, img0) in enumerate(dataloader):
         #if i % 8 != 0:
             #continue
-        if frame_id % 20 == 0:
+        if frame_id % 200 == 0:
             logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1. / max(1e-5, timer.average_time)))
 
         # run tracking
@@ -120,7 +120,7 @@ def eval_seq(opt, dataloader, data_type, result_filename, save_dir=None, show_im
 def main(opt, data_root='/data/MOT16/train', det_root=None, seqs=('MOT16-05',), exp_name='demo',
          save_images=False, save_videos=False, show_image=True):
     logger.setLevel(logging.INFO)
-    result_root = os.path.join(data_root, '..', 'results', exp_name)
+    result_root = os.path.join('/export/wei.zhang/', 'mot_results', data_root.split('/')[-3], exp_name)
     mkdir_if_missing(result_root)
     data_type = 'mot'
 
@@ -133,6 +133,8 @@ def main(opt, data_root='/data/MOT16/train', det_root=None, seqs=('MOT16-05',), 
         logger.info('start seq: {}'.format(seq))
         dataloader = datasets.LoadImages(osp.join(data_root, seq, 'img1'), opt.img_size)
         result_filename = os.path.join(result_root, '{}.txt'.format(seq))
+        seq_heads = seq.split('-')[0] + seq.split('-')[1]
+
         meta_info = open(os.path.join(data_root, seq, 'seqinfo.ini')).read()
         frame_rate = int(meta_info[meta_info.find('frameRate') + 10:meta_info.find('\nseqLength')])
         nf, ta, tc = eval_seq(opt, dataloader, data_type, result_filename,
@@ -189,7 +191,7 @@ if __name__ == '__main__':
                       MOT16-10
                       MOT16-11
                       MOT16-13'''
-        data_root = os.path.join(opt.data_dir, 'MOT16/train')
+        data_root = os.path.join(opt.data_dir, 'MOT16/images/train')
     if opt.test_mot16:
         seqs_str = '''MOT16-01
                       MOT16-03
@@ -200,7 +202,7 @@ if __name__ == '__main__':
                       MOT16-14'''
         #seqs_str = '''MOT16-01 MOT16-07 MOT16-12 MOT16-14'''
         #seqs_str = '''MOT16-06 MOT16-08'''
-        data_root = os.path.join(opt.data_dir, 'MOT16/test')
+        data_root = os.path.join(opt.data_dir, 'MOT16/images/test')
     if opt.test_mot15:
         seqs_str = '''ADL-Rundle-1
                       ADL-Rundle-3
@@ -261,11 +263,10 @@ if __name__ == '__main__':
                       '''
         data_root = os.path.join(opt.data_dir, 'MOT20/images/test')
     seqs = [seq.strip() for seq in seqs_str.split()]
-
     main(opt,
          data_root=data_root,
          seqs=seqs,
-         exp_name='MOT17_test_public_dla34',
+         exp_name='MOT17_test_public_dla34_2',
          show_image=False,
          save_images=False,
          save_videos=False)

@@ -5,4 +5,5 @@
 """
 
 from .config import CfgNode, get_cfg
-from .defaults import _C as cfg
+from .defaults_new import _C as cfg
+# from .defaults import _C as cfg

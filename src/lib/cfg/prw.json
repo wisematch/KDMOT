@@ -1,0 +1,15 @@
+{
+    "root":"/export/wei.zhang/datasets/mixdata",
+    "train":
+    {
+        "prw":"./data/prw.train"
+    },
+    "test_emb":
+    {
+        "prw":"./data/prw.val"
+    },
+    "test":
+    {
+        "prw":"./data/prw.val"
+    }
+}

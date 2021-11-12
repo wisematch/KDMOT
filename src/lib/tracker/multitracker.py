@@ -203,6 +203,10 @@ class JDETracker(object):
 
         self.kalman_filter = KalmanFilter()
 
+        self.ablation_no_embed = opt.ablation_no_embed
+        self.ablation_no_iou = opt.ablation_no_iou
+        self.ablation_no_kal = opt.ablation_no_kal
+
     def post_process(self, dets, meta):
         dets = dets.detach().cpu().numpy()
         dets = dets.reshape(1, -1, dets.shape[2])
@@ -301,9 +305,18 @@ class JDETracker(object):
         #for strack in strack_pool:
             #strack.predict()
         STrack.multi_predict(strack_pool)
-        dists = matching.embedding_distance(strack_pool, detections)
+
+        if not self.ablation_no_embed:
+            dists = matching.embedding_distance(strack_pool, detections)
+        else:
+            # only track with iou
+            dists = matching.iou_distance(strack_pool, detections)
+
         #dists = matching.iou_distance(strack_pool, detections)
-        dists = matching.fuse_motion(self.kalman_filter, dists, strack_pool, detections)
+
+        if not self.ablation_no_kal:
+            dists = matching.fuse_motion(self.kalman_filter, dists, strack_pool, detections)
+
         matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.4)
 
         for itracked, idet in matches:
@@ -319,7 +332,13 @@ class JDETracker(object):
         ''' Step 3: Second association, with IOU'''
         detections = [detections[i] for i in u_detection]
         r_tracked_stracks = [strack_pool[i] for i in u_track if strack_pool[i].state == TrackState.Tracked]
-        dists = matching.iou_distance(r_tracked_stracks, detections)
+
+        # Ablation: only embedding
+        if self.ablation_no_iou:
+            dists = matching.embedding_distance(r_tracked_stracks, detections)
+        else:
+            dists = matching.iou_distance(r_tracked_stracks, detections)
+
         matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.5)
 
         for itracked, idet in matches:
@@ -340,7 +359,12 @@ class JDETracker(object):
 
         '''Deal with unconfirmed tracks, usually tracks with only one beginning frame'''
         detections = [detections[i] for i in u_detection]
-        dists = matching.iou_distance(unconfirmed, detections)
+
+        if self.ablation_no_iou:
+            dists = matching.embedding_distance(unconfirmed, detections)
+        else:
+            dists = matching.iou_distance(unconfirmed, detections)
+
         matches, u_unconfirmed, u_detection = matching.linear_assignment(dists, thresh=0.7)
         for itracked, idet in matches:
             unconfirmed[itracked].update(detections[idet], self.frame_id)

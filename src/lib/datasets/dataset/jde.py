@@ -18,9 +18,9 @@ from torchvision.transforms import functional as F
 from torchvision.transforms import ToPILImage
 
 from cython_bbox import bbox_overlaps as bbox_ious
-from opts import opts
-from utils.image import gaussian_radius, draw_umich_gaussian, draw_msra_gaussian
-from utils.utils import xyxy2xywh, generate_anchors, xywh2xyxy, encode_delta
+from lib.opts import opts
+from lib.utils.image import gaussian_radius, draw_umich_gaussian, draw_msra_gaussian
+from lib.utils.utils import xyxy2xywh, generate_anchors, xywh2xyxy, encode_delta
 
 class LoadImages:  # for inference
     def __init__(self, path, img_size=(1088, 608)):
@@ -780,8 +780,7 @@ class CropJointDataset(LoadImagesAndLabels):  # for training
                     # time.sleep(2)
                     # crop_im2.save('/export/wei.zhang/PycharmProjects/FairMOT/vis_debug/' + '2_'+ str(k) + '_' + img_path.split('/')[-1])
                     time.sleep(2)
-        if save_crop_im:
-            assert 0
+                    assert 0
         ret = {'input': imgs, 'hm': hm, 'reg_mask': reg_mask, 'ind': ind, 'wh': wh, 'reg': reg, 'ids': ids, 'bbox': bbox_xys,
                'cropped_imgs': cropped_imgs}
         return ret

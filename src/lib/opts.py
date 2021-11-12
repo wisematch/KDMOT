@@ -10,7 +10,7 @@ class opts(object):
   def __init__(self):
     self.parser = argparse.ArgumentParser()
     # basic experiment setting
-    self.parser.add_argument('task', default='mot', help='mot')
+    self.parser.add_argument('--task', default='kd', help='kd')
     self.parser.add_argument('--dataset', default='jde', help='jde')
     self.parser.add_argument('--exp_id', default='default')
     self.parser.add_argument('--test', action='store_true')
@@ -166,6 +166,15 @@ class opts(object):
     self.parser.add_argument('--origin_crop', default=False)
     self.parser.add_argument('--id_head', default='base',
                              help='base | res')
+    self.parser.add_argument('--new_teacher', default=False)
+    self.parser.add_argument('--new_teacher_cfg', default='')
+
+    self.parser.add_argument('--ablation_no_embed', default=False)
+    self.parser.add_argument('--ablation_no_iou', default=False)
+    self.parser.add_argument('--ablation_no_kal', default=False)
+
+    self.parser.add_argument('--standard_kd', default=False)
+    self.parser.add_argument('--standard_kd_weight', type=float, default=1)
 
   def parse(self, args=''):
     if args == '':
@@ -246,7 +255,7 @@ class opts(object):
         opt.heads.update({'reg': 2})
       opt.nID = dataset.nID
       opt.img_size = (1088, 608)
-      opt.crop_h = 384
+      opt.crop_h = 256
       opt.crop_w = 128
       # opt.img_size = (864, 480)
       # opt.img_size = (576, 320)
