@@ -3,6 +3,7 @@ This is the official repository to the ACMMM 2021 paper "Boosting end-to-end mul
 
 ## Citation
 Please cite our paper in your publications if it helps your research.
+
 @inproceedings { RudWan2021,
 author = {Marco Rudolph and Bastian Wandt and Bodo Rosenhahn},
 title = {Same Same But DifferNet: Semi-Supervised Defect Detection with Normalizing Flows},
